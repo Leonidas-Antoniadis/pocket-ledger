@@ -9,6 +9,7 @@ import type {
   TransactionInput,
   TransactionListItem,
 } from '@/types';
+import { runInTransaction } from '@/db/transaction';
 import { monthKeyOf, nowISO } from '@/utils/dates';
 
 import { notifyDataChanged } from './events';
@@ -219,7 +220,7 @@ export async function updateTransaction(db: SQLiteDatabase, id: string, input: T
 /** Soft-deletes the transaction row and its attachment rows. Files are removed by the receipts service. */
 export async function softDeleteTransaction(db: SQLiteDatabase, id: string): Promise<void> {
   const now = nowISO();
-  await db.withExclusiveTransactionAsync(async (txn) => {
+  await runInTransaction(db, async (txn) => {
     await txn.runAsync('UPDATE attachments SET deleted_at = ? WHERE transaction_id = ? AND deleted_at IS NULL', [now, id]);
     await txn.runAsync(
       `UPDATE transactions SET deleted_at = ?, updated_at = ?,

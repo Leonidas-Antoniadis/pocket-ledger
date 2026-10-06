@@ -7,6 +7,7 @@ import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 
 import { AppText, Card, Divider, ListRow, Screen, SectionHeader, Segmented, TextField } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { totalAttachmentBytes } from '@/data/attachments';
+import { loadDemoData } from '@/db/demo';
 import { useQuery } from '@/hooks/use-query';
 import { useTheme } from '@/hooks/use-theme';
 import { LANGUAGES } from '@/i18n';
@@ -24,7 +25,17 @@ export default function SettingsScreen() {
   const { settings, strings: t, updateSettings } = useSettings();
   const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
   const [profileName, setProfileName] = useState(settings.profileName);
+  const [demoStatus, setDemoStatus] = useState<string | null>(null);
   const storage = useQuery(totalAttachmentBytes, []);
+
+  async function loadDemo() {
+    try {
+      const count = await loadDemoData(db, settings.currency);
+      setDemoStatus(t.settings.loadDemoDone(count));
+    } catch (error) {
+      setDemoStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   function confirmDeleteAll() {
     Alert.alert(t.settings.deleteAll, t.settings.deleteAllConfirm, [
@@ -127,6 +138,17 @@ export default function SettingsScreen() {
               icon="information-circle-outline"
               value={Constants.expoConfig?.version ?? '1.0.0'}
             />
+            {__DEV__ ? (
+              <>
+                <Divider />
+                <ListRow
+                  title={t.settings.loadDemo}
+                  subtitle={demoStatus ?? t.settings.loadDemoHint}
+                  icon="flask-outline"
+                  onPress={() => void loadDemo()}
+                />
+              </>
+            ) : null}
           </Card>
         </View>
       </ScrollView>

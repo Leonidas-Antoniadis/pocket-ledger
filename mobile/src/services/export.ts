@@ -1,8 +1,8 @@
-import { File } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { strToU8, zipSync, type Zippable } from 'fflate';
+import { Platform } from 'react-native';
 
 import { listReceiptsForPeriod } from '@/data/attachments';
 import { listTransactionsByMonth, listTransactionsByYear } from '@/data/transactions';
@@ -12,7 +12,14 @@ import { toCsv } from '@/utils/csv';
 import { formatDate, formatDateTime, formatMonth, nowISO } from '@/utils/dates';
 import { formatMoney } from '@/utils/money';
 
-import { exportsDirectory, readFileBytes, renderBase64Jpeg, writeExportBytes, writeExportText } from './receipt-files';
+import {
+  moveToExports,
+  readFileBytes,
+  renderBase64Jpeg,
+  writeExportBytes,
+  writeExportText,
+  type ExportFile,
+} from './receipt-files';
 
 export type Period = { type: 'month'; month: string } | { type: 'year'; year: number };
 
@@ -37,12 +44,27 @@ function fileStem(period: Period): string {
   return `PocketLedger_${periodKey(period)}`;
 }
 
-export async function shareFile(file: File, mimeType: string, dialogTitle: string, t: Strings): Promise<void> {
+const UTI_BY_MIME: Record<string, string> = {
+  'application/pdf': 'com.adobe.pdf',
+  'text/csv': 'public.comma-separated-values-text',
+  'application/zip': 'public.zip-archive',
+};
+
+/** Hands the file to the OS share sheet; on web it triggers a download instead. */
+export async function shareFile(file: ExportFile, dialogTitle: string, t: Strings): Promise<void> {
+  if (Platform.OS === 'web') {
+    const anchor = document.createElement('a');
+    anchor.href = file.uri;
+    anchor.download = file.name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return;
+  }
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error(t.export.shareUnavailable);
   }
-  const uti = mimeType === 'application/pdf' ? 'com.adobe.pdf' : mimeType === 'text/csv' ? 'public.comma-separated-values-text' : 'public.zip-archive';
-  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle, UTI: uti });
+  await Sharing.shareAsync(file.uri, { mimeType: file.mimeType, dialogTitle, UTI: UTI_BY_MIME[file.mimeType] });
 }
 
 async function loadPeriod(db: SQLiteDatabase, period: Period) {
@@ -99,7 +121,7 @@ function buildCsv(
     tx.invoiceNumber,
     tx.paymentMethod ? t.tx.payment[tx.paymentMethod] : '',
     tx.note,
-    (receiptsByTransaction.get(tx.id) ?? []).map((r) => `${r.relativePath.split('/').slice(-2).join('/')}`).join('; '),
+    (receiptsByTransaction.get(tx.id) ?? []).map((r) => r.relativePath.split('/').slice(-2).join('/')).join('; '),
   ]);
   return toCsv(header, rows);
 }
@@ -107,8 +129,8 @@ function buildCsv(
 export async function exportCsv(db: SQLiteDatabase, period: Period, ctx: ExportContext): Promise<ExportOutcome> {
   const { transactions, receiptsByTransaction } = await loadPeriod(db, period);
   if (transactions.length === 0) return 'empty';
-  const file = writeExportText(`${fileStem(period)}.csv`, buildCsv(transactions, receiptsByTransaction, ctx));
-  await shareFile(file, 'text/csv', `${ctx.t.export.csv} · ${periodLabel(period, ctx.locale)}`, ctx.t);
+  const file = writeExportText(`${fileStem(period)}.csv`, buildCsv(transactions, receiptsByTransaction, ctx), 'text/csv');
+  await shareFile(file, `${ctx.t.export.csv} · ${periodLabel(period, ctx.locale)}`, ctx.t);
   return 'done';
 }
 
@@ -237,11 +259,16 @@ export async function exportPdf(
   }
 
   const html = buildReportHtml(period, transactions, receiptsByTransaction, images, ctx);
+
+  if (Platform.OS === 'web') {
+    // Browsers have no "print to file"; the print dialog offers "Save as PDF".
+    await Print.printAsync({ html });
+    return 'done';
+  }
+
   const printed = await Print.printToFileAsync({ html, base64: false });
-  const source = new File(printed.uri);
-  const target = new File(exportsDirectory(), `${fileStem(period)}_report.pdf`);
-  await source.move(target, { overwrite: true });
-  await shareFile(target, 'application/pdf', `${ctx.t.export.pdf} · ${periodLabel(period, ctx.locale)}`, ctx.t);
+  const file = await moveToExports(printed.uri, `${fileStem(period)}_report.pdf`, 'application/pdf');
+  await shareFile(file, `${ctx.t.export.pdf} · ${periodLabel(period, ctx.locale)}`, ctx.t);
   return 'done';
 }
 
@@ -259,7 +286,7 @@ export async function exportReceiptsZip(db: SQLiteDatabase, period: Period, ctx:
     entries[`${folder}/${fileNameOf(receipt.relativePath)}`] = [bytes, { level: 0 }];
   }
   const zipped = zipSync(entries);
-  const file = writeExportBytes(`${fileStem(period)}_receipts.zip`, zipped);
-  await shareFile(file, 'application/zip', `${ctx.t.export.zip} · ${periodLabel(period, ctx.locale)}`, ctx.t);
+  const file = writeExportBytes(`${fileStem(period)}_receipts.zip`, zipped, 'application/zip');
+  await shareFile(file, `${ctx.t.export.zip} · ${periodLabel(period, ctx.locale)}`, ctx.t);
   return 'done';
 }

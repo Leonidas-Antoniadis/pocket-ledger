@@ -438,7 +438,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: 14,
   },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '700', paddingVertical: 12 },
+  // minWidth 0 lets the input shrink below its intrinsic width (matters on web, harmless on phones)
+  amountInput: { flex: 1, minWidth: 0, fontSize: 32, fontWeight: '700', paddingVertical: 12 },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',

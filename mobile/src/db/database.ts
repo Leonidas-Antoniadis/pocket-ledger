@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { nowISO } from '@/utils/dates';
 
 import { DEFAULT_CATEGORIES } from './seed';
+import { runInTransaction } from './transaction';
 
 export const DATABASE_NAME = 'pocket-ledger.db';
 
@@ -115,7 +116,7 @@ export async function seedDefaultCategories(db: SQLiteDatabase): Promise<void> {
 
 /** Removes every row. Used by "Delete all data" (files are removed separately by the receipt-files service). */
 export async function wipeAllData(db: SQLiteDatabase): Promise<void> {
-  await db.withExclusiveTransactionAsync(async (txn) => {
+  await runInTransaction(db, async (txn) => {
     await txn.execAsync('DELETE FROM attachments; DELETE FROM transactions; DELETE FROM categories; DELETE FROM settings;');
   });
   await seedDefaultCategories(db);

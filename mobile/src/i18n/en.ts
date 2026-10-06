@@ -131,6 +131,9 @@ export const en = {
     cloudSyncHint:
       'Coming soon: back up and sync to a server. For now everything is stored only on this phone, so make backups.',
     languages: { en: 'English', el: 'Ελληνικά' } as Record<string, string>,
+    loadDemo: 'Load demo data',
+    loadDemoHint: 'Development builds only: adds sample entries and receipt photos',
+    loadDemoDone: (n: number) => `Demo data loaded: ${n} entries added`,
   },
   categories: {
     title: 'Categories',

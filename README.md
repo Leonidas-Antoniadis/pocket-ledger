@@ -11,6 +11,35 @@ Book Keeping App/
 └── README.md
 ```
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/home.png" width="230" alt="Home: month overview with net, income and expenses, Snap receipt button and entries grouped by day"><br><sub><b>Home</b> – month overview, one-tap <i>Snap receipt</i>, entries by day</sub></td>
+    <td align="center"><img src="docs/screenshots/receipt-folder-month.png" width="230" alt="Receipt folder for one month showing photo thumbnails"><br><sub><b>Monthly receipt folder</b> – photos filed automatically under <code>receipts/2026-10</code></sub></td>
+    <td align="center"><img src="docs/screenshots/receipt-photo.png" width="230" alt="Full-screen receipt photo with share and open-entry actions"><br><sub><b>Receipt viewer</b> – share the photo or jump to its entry</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/entry-detail.png" width="230" alt="Entry detail with category, date, supplier, payment method, VAT and receipt photo"><br><sub><b>Entry detail</b> – category, supplier, payment, VAT, photos</sub></td>
+    <td align="center"><img src="docs/screenshots/new-expense.png" width="230" alt="New expense form with amount, camera and gallery buttons, date and category chips"><br><sub><b>New expense</b> – amount, camera/gallery, date, categories</sub></td>
+    <td align="center"><img src="docs/screenshots/receipt-folders.png" width="230" alt="List of monthly receipt folders with counts and totals"><br><sub><b>Receipt folders</b> – one folder per month with totals</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/reports.png" width="230" alt="Yearly report with net, income, expenses and bars per month"><br><sub><b>Reports</b> – year totals and income vs expenses per month</sub></td>
+    <td align="center"><img src="docs/screenshots/reports-categories.png" width="230" alt="Expenses broken down by category with percentages"><br><sub><b>By category</b> – where the money goes</sub></td>
+    <td align="center"><img src="docs/screenshots/export-backup.png" width="230" alt="Export and backup screen with CSV, PDF, ZIP, backup and restore"><br><sub><b>Export &amp; backup</b> – CSV, PDF report, ZIP, full backup/restore</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/categories.png" width="230" alt="Category list for expenses and income"><br><sub><b>Categories</b> – courier defaults, add your own</sub></td>
+    <td align="center"><img src="docs/screenshots/home-greek.png" width="230" alt="Home screen in Greek"><br><sub><b>Greek UI</b> – English and Greek, EUR by default</sub></td>
+    <td align="center"><img src="docs/screenshots/home-dark.png" width="230" alt="Home screen in dark mode"><br><sub><b>Dark mode</b> – follows the system setting</sub></td>
+  </tr>
+</table>
+
+The screenshots are taken from the web build of the same code at phone size (`npm run screenshots`, see
+[Screenshots](#regenerating-the-screenshots) below) with the built-in demo data. On a phone the screens are identical;
+only the navigation bars are native.
+
 ## Stack and why
 
 | Layer      | Choice                                             | Reason                                                                                         |
@@ -62,6 +91,23 @@ npm run lint           # eslint, warnings fail
 npm test               # jest unit tests (money parsing, dates, CSV, translations)
 npx expo-doctor        # dependency / config sanity check
 npm run export:android # Metro bundle of the Android app into mobile/dist
+```
+
+### Trying it with sample data
+
+In development builds (Expo Go, `expo start`) the Settings screen has a **Load demo data** row that inserts ~26
+sample entries over three months, with receipt photos for some of them. **Delete all data** in Settings clears it.
+
+### Regenerating the screenshots
+
+The app also runs in a browser (`npx expo start --web`), using SQLite's wasm build and IndexedDB for photos. The
+screenshots in this README are produced from that build:
+
+```powershell
+cd mobile
+npm run demo:receipts   # renders the sample receipt images into assets/demo (needs Chrome or Edge installed)
+npx expo start --web    # in one terminal
+npm run screenshots     # in another: walks through the app at phone size and writes docs/screenshots/*.png
 ```
 
 ## Continuous integration

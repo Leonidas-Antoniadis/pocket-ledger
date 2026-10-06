@@ -2,17 +2,18 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
 import { DATABASE_NAME, initializeDatabase } from '@/db/database';
 import { useTheme } from '@/hooks/use-theme';
-import { cleanupInbox } from '@/services/receipt-files';
+import { cleanupInbox, prepareFileStorage } from '@/services/receipt-files';
 import { SettingsProvider, useStrings } from '@/state/settings';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 async function onDatabaseInit(db: SQLiteDatabase) {
   await initializeDatabase(db);
+  await prepareFileStorage();
   cleanupInbox();
 }
 
@@ -50,16 +51,20 @@ export default function RootLayout() {
   );
 }
 
+// Sheets/modals only make sense on phones; in a browser they render as ordinary pages.
+const modal = Platform.OS === 'web' ? 'card' : 'modal';
+const fullScreenModal = Platform.OS === 'web' ? 'card' : 'fullScreenModal';
+
 function RootStack() {
   const { t } = useStrings();
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="transaction/new" options={{ presentation: 'modal', title: '' }} />
+      <Stack.Screen name="transaction/new" options={{ presentation: modal, title: '' }} />
       <Stack.Screen name="transaction/[id]/index" options={{ title: t.tx.details }} />
-      <Stack.Screen name="transaction/[id]/edit" options={{ presentation: 'modal', title: t.tx.edit }} />
+      <Stack.Screen name="transaction/[id]/edit" options={{ presentation: modal, title: t.tx.edit }} />
       <Stack.Screen name="folder/[month]" options={{ title: '' }} />
-      <Stack.Screen name="attachment/[id]" options={{ presentation: 'fullScreenModal', headerShown: false }} />
+      <Stack.Screen name="attachment/[id]" options={{ presentation: fullScreenModal, headerShown: false }} />
       <Stack.Screen name="categories" options={{ title: t.categories.title }} />
       <Stack.Screen name="export" options={{ title: t.export.title }} />
     </Stack>

@@ -32,3 +32,6 @@ api/**/obj/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+
+# Machine-specific dev server launch config (portable Node path)
+.claude/launch.json

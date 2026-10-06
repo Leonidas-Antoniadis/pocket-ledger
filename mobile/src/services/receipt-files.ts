@@ -1,8 +1,25 @@
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { Platform } from 'react-native';
 
 import type { PendingAttachment } from '@/types';
+
+import {
+  bytesToDataUrl,
+  dataUrlByteLength,
+  dataUrlToBytes,
+  loadWebFiles,
+  uriToDataUrl,
+  webClear,
+  webDelete,
+  webGet,
+  webHas,
+  webList,
+  webMove,
+  webPut,
+  webSize,
+} from './web-file-store';
 
 /**
  * Receipt photos live under the app's private document directory:
@@ -12,6 +29,9 @@ import type { PendingAttachment } from '@/types';
  *
  * The database stores paths relative to the document directory (`receipts/2026-10/<uuid>.jpg`) because
  * the absolute location can change between app installs/updates on iOS.
+ *
+ * On web (preview / screenshots only) the same relative paths are kept in IndexedDB as data URLs,
+ * see web-file-store.ts.
  */
 export const RECEIPTS_DIR = 'receipts';
 const INBOX_DIR = '_inbox';
@@ -20,14 +40,17 @@ const INBOX_DIR = '_inbox';
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.75;
 
+const isWeb = Platform.OS === 'web';
+
+/** Must run once before anything renders photos. No-op on phones. */
+export async function prepareFileStorage(): Promise<void> {
+  if (isWeb) await loadWebFiles();
+}
+
 function ensureDirectory(...segments: string[]): Directory {
   const dir = new Directory(Paths.document, ...segments);
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   return dir;
-}
-
-export function receiptsRoot(): Directory {
-  return ensureDirectory(RECEIPTS_DIR);
 }
 
 export function monthDirectory(month: string): Directory {
@@ -42,12 +65,18 @@ function fileFor(relativePath: string): File {
   return new File(Paths.document, ...relativePath.split('/'));
 }
 
-/** Absolute file:// URI for a stored relative path (for <Image source={{ uri }} />). */
+function mimeTypeFor(relativePath: string): string {
+  return relativePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+}
+
+/** URI usable in <Image source={{ uri }} /> for a stored relative path. */
 export function absoluteUri(relativePath: string): string {
+  if (isWeb) return webGet(relativePath) ?? '';
   return fileFor(relativePath).uri;
 }
 
 export function fileExists(relativePath: string): boolean {
+  if (isWeb) return webHas(relativePath);
   try {
     return fileFor(relativePath).exists;
   } catch {
@@ -73,7 +102,7 @@ export async function importImage(uri: string, width?: number, height?: number):
   const image = await context.renderAsync();
   let result;
   try {
-    result = await image.saveAsync({ compress: JPEG_QUALITY, format: SaveFormat.JPEG });
+    result = await image.saveAsync({ compress: JPEG_QUALITY, format: SaveFormat.JPEG, base64: isWeb });
   } finally {
     try {
       image.release();
@@ -83,12 +112,26 @@ export async function importImage(uri: string, width?: number, height?: number):
   }
 
   const id = Crypto.randomUUID();
+  const relativePath = `${RECEIPTS_DIR}/${INBOX_DIR}/${id}.jpg`;
+
+  if (isWeb) {
+    const dataUrl = result.base64 ? `data:image/jpeg;base64,${result.base64}` : await uriToDataUrl(result.uri);
+    await webPut(relativePath, dataUrl);
+    return {
+      id,
+      relativePath,
+      mimeType: 'image/jpeg',
+      width: result.width,
+      height: result.height,
+      sizeBytes: dataUrlByteLength(dataUrl),
+    };
+  }
+
   const destination = new File(inboxDirectory(), `${id}.jpg`);
   await new File(result.uri).move(destination, { overwrite: true });
-
   return {
     id,
-    relativePath: `${RECEIPTS_DIR}/${INBOX_DIR}/${id}.jpg`,
+    relativePath,
     mimeType: 'image/jpeg',
     width: result.width,
     height: result.height,
@@ -96,13 +139,31 @@ export async function importImage(uri: string, width?: number, height?: number):
   };
 }
 
+/** Copy an existing picture (bundled demo asset, restored backup…) straight into a monthly folder. */
+export async function importFileToPath(sourceUri: string, relativePath: string): Promise<number | null> {
+  if (isWeb) {
+    const dataUrl = await uriToDataUrl(sourceUri);
+    await webPut(relativePath, dataUrl);
+    return dataUrlByteLength(dataUrl);
+  }
+  const segments = relativePath.split('/');
+  const name = segments.pop();
+  if (!name) throw new Error(`Invalid path ${relativePath}`);
+  const destination = new File(ensureDirectory(...segments), name);
+  await new File(sourceUri).copy(destination, { overwrite: true });
+  return destination.size;
+}
+
 /** Move an inbox photo into its final monthly folder. Returns the new relative path. */
 export async function commitPendingAttachment(pending: PendingAttachment, month: string): Promise<string> {
   const target = `${RECEIPTS_DIR}/${month}/${pending.id}.jpg`;
   if (pending.relativePath === target) return target;
-  const source = fileFor(pending.relativePath);
+  if (isWeb) {
+    await webMove(pending.relativePath, target);
+    return target;
+  }
   const destination = new File(monthDirectory(month), `${pending.id}.jpg`);
-  await source.move(destination, { overwrite: true });
+  await fileFor(pending.relativePath).move(destination, { overwrite: true });
   return target;
 }
 
@@ -112,6 +173,11 @@ export async function moveAttachmentToMonth(relativePath: string, month: string)
   if (!name) return relativePath;
   const target = `${RECEIPTS_DIR}/${month}/${name}`;
   if (target === relativePath) return relativePath;
+  if (isWeb) {
+    if (!webHas(relativePath)) return relativePath;
+    await webMove(relativePath, target);
+    return target;
+  }
   const source = fileFor(relativePath);
   if (!source.exists) return relativePath;
   await source.move(new File(monthDirectory(month), name), { overwrite: true });
@@ -119,6 +185,10 @@ export async function moveAttachmentToMonth(relativePath: string, month: string)
 }
 
 export function deleteFile(relativePath: string): void {
+  if (isWeb) {
+    void webDelete(relativePath);
+    return;
+  }
   try {
     const file = fileFor(relativePath);
     if (file.exists) file.delete();
@@ -133,6 +203,10 @@ export function discardPendingAttachments(pending: PendingAttachment[]): void {
 
 /** Remove photos left behind by forms that were abandoned (app killed, etc.). Called at start-up. */
 export function cleanupInbox(): void {
+  if (isWeb) {
+    for (const key of webList(`${RECEIPTS_DIR}/${INBOX_DIR}/`)) void webDelete(key);
+    return;
+  }
   try {
     const inbox = new Directory(Paths.document, RECEIPTS_DIR, INBOX_DIR);
     if (inbox.exists) inbox.delete();
@@ -142,6 +216,10 @@ export function cleanupInbox(): void {
 }
 
 export function deleteAllReceiptFiles(): void {
+  if (isWeb) {
+    void webClear();
+    return;
+  }
   try {
     const root = new Directory(Paths.document, RECEIPTS_DIR);
     if (root.exists) root.delete();
@@ -151,6 +229,7 @@ export function deleteAllReceiptFiles(): void {
 }
 
 export function receiptsStorageBytes(): number {
+  if (isWeb) return webSize();
   try {
     const root = new Directory(Paths.document, RECEIPTS_DIR);
     return root.exists ? (root.size ?? 0) : 0;
@@ -160,6 +239,10 @@ export function receiptsStorageBytes(): number {
 }
 
 export async function readFileBytes(relativePath: string): Promise<Uint8Array | null> {
+  if (isWeb) {
+    const dataUrl = webGet(relativePath);
+    return dataUrl ? dataUrlToBytes(dataUrl) : null;
+  }
   try {
     const file = fileFor(relativePath);
     if (!file.exists) return null;
@@ -169,14 +252,26 @@ export async function readFileBytes(relativePath: string): Promise<Uint8Array | 
   }
 }
 
-export function writeFileBytes(relativePath: string, bytes: Uint8Array): void {
+export async function writeFileBytes(relativePath: string, bytes: Uint8Array): Promise<void> {
+  if (isWeb) {
+    await webPut(relativePath, bytesToDataUrl(bytes, mimeTypeFor(relativePath)));
+    return;
+  }
   const segments = relativePath.split('/');
   const name = segments.pop();
   if (!name) throw new Error(`Invalid path ${relativePath}`);
-  const dir = ensureDirectory(...segments);
-  const file = new File(dir, name);
+  const file = new File(ensureDirectory(...segments), name);
   file.create({ overwrite: true, intermediates: true });
   file.write(bytes);
+}
+
+/** Read any picked/downloaded URI (file://, blob:, data:) as bytes. */
+export async function readUriBytes(uri: string): Promise<Uint8Array> {
+  if (isWeb) {
+    const response = await fetch(uri);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  return new File(uri).bytes();
 }
 
 /**
@@ -187,19 +282,21 @@ export async function renderBase64Jpeg(
   relativePath: string,
   options: { maxWidth: number; quality: number; knownWidth?: number | null },
 ): Promise<string | null> {
-  const file = fileFor(relativePath);
-  if (!file.exists) return null;
-  let context = ImageManipulator.manipulate(file.uri);
+  const sourceUri = absoluteUri(relativePath);
+  if (!sourceUri || !fileExists(relativePath)) return null;
+  let context = ImageManipulator.manipulate(sourceUri);
   if (!options.knownWidth || options.knownWidth > options.maxWidth) {
     context = context.resize({ width: options.maxWidth });
   }
   const image = await context.renderAsync();
   try {
     const result = await image.saveAsync({ compress: options.quality, format: SaveFormat.JPEG, base64: true });
-    try {
-      new File(result.uri).delete();
-    } catch {
-      // temp file cleanup is best effort
+    if (!isWeb) {
+      try {
+        new File(result.uri).delete();
+      } catch {
+        // temp file cleanup is best effort
+      }
     }
     return result.base64 ?? null;
   } finally {
@@ -211,23 +308,47 @@ export async function renderBase64Jpeg(
   }
 }
 
-/** Scratch folder for files we hand to the share sheet. */
-export function exportsDirectory(): Directory {
+/* ------------------------------------------------------------------ */
+/* Export files (handed to the share sheet, or downloaded on web)     */
+/* ------------------------------------------------------------------ */
+
+export interface ExportFile {
+  uri: string;
+  name: string;
+  mimeType: string;
+}
+
+function exportsDirectory(): Directory {
   const dir = new Directory(Paths.cache, 'exports');
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
   return dir;
 }
 
-export function writeExportText(fileName: string, text: string): File {
-  const file = new File(exportsDirectory(), fileName);
+export function writeExportText(name: string, text: string, mimeType: string): ExportFile {
+  if (isWeb) {
+    const blob = new Blob([text], { type: mimeType });
+    return { uri: URL.createObjectURL(blob), name, mimeType };
+  }
+  const file = new File(exportsDirectory(), name);
   file.create({ overwrite: true });
   file.write(text);
-  return file;
+  return { uri: file.uri, name, mimeType };
 }
 
-export function writeExportBytes(fileName: string, bytes: Uint8Array): File {
-  const file = new File(exportsDirectory(), fileName);
+export function writeExportBytes(name: string, bytes: Uint8Array, mimeType: string): ExportFile {
+  if (isWeb) {
+    const blob = new Blob([bytes as BlobPart], { type: mimeType });
+    return { uri: URL.createObjectURL(blob), name, mimeType };
+  }
+  const file = new File(exportsDirectory(), name);
   file.create({ overwrite: true });
   file.write(bytes);
-  return file;
+  return { uri: file.uri, name, mimeType };
+}
+
+/** Move a file produced elsewhere (e.g. expo-print's PDF) into the exports folder under a nice name. Native only. */
+export async function moveToExports(sourceUri: string, name: string, mimeType: string): Promise<ExportFile> {
+  const target = new File(exportsDirectory(), name);
+  await new File(sourceUri).move(target, { overwrite: true });
+  return { uri: target.uri, name, mimeType };
 }

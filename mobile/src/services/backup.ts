@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 
@@ -9,12 +8,13 @@ import { listCategoriesRaw, upsertCategoryRaw, type RawCategory } from '@/data/c
 import { notifyDataChanged } from '@/data/events';
 import { getAllSettings } from '@/data/settings';
 import { listAllTransactions, upsertTransactionRaw } from '@/data/transactions';
+import { runInTransaction } from '@/db/transaction';
 import type { Strings } from '@/i18n';
 import type { Attachment, Transaction } from '@/types';
 import { fileTimestamp, nowISO } from '@/utils/dates';
 
-import { readFileBytes, writeExportBytes, writeFileBytes } from './receipt-files';
 import { shareFile } from './export';
+import { readFileBytes, readUriBytes, writeExportBytes, writeFileBytes } from './receipt-files';
 
 const BACKUP_APP = 'pocket-ledger';
 const BACKUP_FORMAT = 1;
@@ -78,8 +78,8 @@ export async function createBackup(db: SQLiteDatabase, t: Strings): Promise<void
   entries['data.json'] = strToU8(JSON.stringify(data));
 
   const zipped = zipSync(entries);
-  const file = writeExportBytes(`PocketLedger_backup_${fileTimestamp()}.zip`, zipped);
-  await shareFile(file, 'application/zip', t.export.backup, t);
+  const file = writeExportBytes(`PocketLedger_backup_${fileTimestamp()}.zip`, zipped, 'application/zip');
+  await shareFile(file, t.export.backup, t);
 }
 
 function stripListFields(tx: Transaction): Transaction {
@@ -111,7 +111,7 @@ export async function pickAndRestoreBackup(db: SQLiteDatabase): Promise<number |
 }
 
 export async function restoreBackupFromUri(db: SQLiteDatabase, uri: string): Promise<number> {
-  const bytes = await new File(uri).bytes();
+  const bytes = await readUriBytes(uri);
   let unzipped: Record<string, Uint8Array>;
   try {
     unzipped = unzipSync(bytes);
@@ -136,7 +136,7 @@ export async function restoreBackupFromUri(db: SQLiteDatabase, uri: string): Pro
 
   const attachments = (data.attachments ?? []).filter((a) => unzipped[a.relativePath] !== undefined);
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
+  await runInTransaction(db, async (txn) => {
     for (const category of data.categories) await upsertCategoryRaw(txn, category);
     for (const tx of data.transactions) await upsertTransactionRaw(txn, tx);
     for (const attachment of attachments) await upsertAttachmentRaw(txn, attachment);
@@ -144,7 +144,7 @@ export async function restoreBackupFromUri(db: SQLiteDatabase, uri: string): Pro
 
   for (const attachment of attachments) {
     const fileBytes = unzipped[attachment.relativePath];
-    if (fileBytes) writeFileBytes(attachment.relativePath, fileBytes);
+    if (fileBytes) await writeFileBytes(attachment.relativePath, fileBytes);
   }
 
   notifyDataChanged();
