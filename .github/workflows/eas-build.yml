@@ -1,0 +1,51 @@
+# Builds an installable Android APK in the Expo cloud (EAS Build).
+#
+# One-time setup (needs a free account at https://expo.dev):
+#   1. cd mobile && npx eas-cli@latest init      -> links the app to an EAS project (adds extra.eas.projectId to app.json); commit it
+#   2. Create an access token at https://expo.dev/accounts/<you>/settings/access-tokens
+#   3. Add it to this repository as the secret EXPO_TOKEN (Settings -> Secrets and variables -> Actions)
+# Then run this workflow from the Actions tab. The APK link appears in the build log and on expo.dev.
+
+name: EAS Build (Android APK)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile (see mobile/eas.json)
+        default: preview
+        type: choice
+        options: [preview, production]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::EXPO_TOKEN secret is missing. See the comment at the top of .github/workflows/eas-build.yml"
+            exit 1
+          fi
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build APK
+        run: eas build --platform android --profile ${{ inputs.profile }} --non-interactive --no-wait
