@@ -120,7 +120,20 @@ cloud "does it build" check; it does not need an Expo account.
 setup described at the top of that file (link the project with `npx eas-cli@latest init`, add an `EXPO_TOKEN`
 repository secret).
 
-### Building an installable Android APK (no Android Studio needed)
+### Free APK from GitHub (no Expo account)
+
+`.github/workflows/android-apk.yml` builds a release APK on GitHub's runners and publishes it as a GitHub Release.
+Run it from the Actions tab, or push a tag (`git tag v1.0.1 && git push origin v1.0.1`). The newest APK is always at:
+
+```
+https://github.com/Leonidas-Antoniadis/pocket-ledger/releases/latest/download/pocket-ledger.apk
+```
+
+Open that link on the phone and install. Every build is signed with the same key and gets a higher version code, so
+installing a newer APK updates the app and keeps all data. The key is the public template key: fine for sharing with
+family, not for a store release.
+
+### Building an installable Android APK with EAS (no Android Studio needed)
 
 Expo Go is for development. For your brother's phone build a standalone APK in the cloud with EAS (free tier is enough):
 
