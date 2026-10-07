@@ -1,9 +1,8 @@
 # Builds an installable Android APK on GitHub's own runners (no Expo account, no Play Store)
 # and publishes it as a GitHub Release.
 #
-# Release a new version:
-#   - push a tag:      git tag v1.0.1 && git push origin v1.0.1
-#   - or run it by hand from the Actions tab ("Android APK" -> Run workflow)
+# A new release is built automatically on every push to main that changes the app,
+# on a pushed tag (git tag v1.0.1 && git push origin v1.0.1), or by hand from the Actions tab.
 #
 # Permanent download link (always the newest release):
 #   https://github.com/<owner>/<repo>/releases/latest/download/pocket-ledger.apk
@@ -16,6 +15,8 @@ name: Android APK
 
 on:
   push:
+    branches: [main, claude/android-apk-release]
+    paths: ['mobile/**', '.github/workflows/android-apk.yml']
     tags: ['v*']
   workflow_dispatch:
 

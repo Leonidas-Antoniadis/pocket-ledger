@@ -123,7 +123,8 @@ repository secret).
 ### Free APK from GitHub (no Expo account)
 
 `.github/workflows/android-apk.yml` builds a release APK on GitHub's runners and publishes it as a GitHub Release.
-Run it from the Actions tab, or push a tag (`git tag v1.0.1 && git push origin v1.0.1`). The newest APK is always at:
+It runs on every push to `main` that changes the app, on a pushed `v*` tag, or by hand from the Actions tab. The newest
+APK is always at:
 
 ```
 https://github.com/Leonidas-Antoniadis/pocket-ledger/releases/latest/download/pocket-ledger.apk
